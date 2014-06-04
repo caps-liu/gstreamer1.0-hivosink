@@ -19,7 +19,7 @@ libgsthivosink_la_SOURCES = gstvideosink.c gstvideosink.h gst_hisi_vo_context.c 
 # compiler and linker flags used to compile this plugin, set in configure.ac
 libgsthivosink_la_CFLAGS = $(GST_CFLAGS)
 libgsthivosink_la_LIBADD = $(GST_LIBS)
-libgsthivosink_la_LDFLAGS = $(GST_PLUGIN_LDFLAGS) -lhi_vou -lhi_common -l./gstvideo-1.0
+libgsthivosink_la_LDFLAGS = $(GST_PLUGIN_LDFLAGS) -lhi_vou -lhi_common -lgstvideo-1.0
 libgsthivosink_la_LIBTOOLFLAGS = --tag=disable-static
 
 # headers we need but don't want installed
