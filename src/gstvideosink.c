@@ -35,7 +35,7 @@ GST_STATIC_PAD_TEMPLATE ("sink",
 
 #define DEFAULT_ALIGN_SIZE    (4096)
 #define DEF_MAX_OUT_BUF_CNT   (10) 
-#define DEF_MIN_OUT_BUF_CNT   (19)
+#define DEF_MIN_OUT_BUF_CNT   (10)
 #define DEFAULT_FRAME_WIDTH	   1920  
 #define DEFAULT_FRAME_HEIGHT   1080 
 #define FRAME_SIZE(w, h)       (((w) * (h) * 3) / 2)
