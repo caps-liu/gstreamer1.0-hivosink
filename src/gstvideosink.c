@@ -107,7 +107,7 @@ static void free_contigous_buffer(GstHisiMMZBufInfo *puser_buf)
 		return;
 	}
 
-	printf("free_contigous_buffer: %p:%ld\n",puser_buf->bufferaddr,puser_buf->phyaddr);
+	//printf("free_contigous_buffer: %p:%ld\n",puser_buf->bufferaddr,puser_buf->phyaddr);
 
     buffer.phyaddr = puser_buf->phyaddr;
     buffer.user_viraddr = puser_buf->bufferaddr;
@@ -210,8 +210,6 @@ gst_hisi_buffer_pool_alloc_buffer (GstBufferPool * bpool,
 	alloc_size = FRAME_SIZE((ALIGN_UP(hisi_sink->video_width, 16)), hisi_sink->video_height);
   }
 
-  printf("\e[31m alloc_contigous_buffer[size=%ld]\e[0m", alloc_size);
-
   if ( 0 > alloc_contigous_buffer(alloc_size, DEFAULT_ALIGN_SIZE, meta->mmz)) {
 	 free(meta->mmz);
 	 meta->mmz = 0;
@@ -229,7 +227,6 @@ gst_hisi_buffer_pool_alloc_buffer (GstBufferPool * bpool,
       format, meta->width, meta->height);
   */
   result = GST_FLOW_OK;
-  printf("\e[31m...OK\e[0m\n");
   
 beach:
   if (result != GST_FLOW_OK) {
@@ -252,7 +249,8 @@ gst_hisi_buffer_pool_new (GstHisiVideoSink * videosink)
   pool->videosink = gst_object_ref (videosink);
 
   GST_LOG_OBJECT (pool, "new hisi buffer pool %p", pool);
-
+  printf("##### new hisi buffer pool %p\n", pool);
+  
   return GST_BUFFER_POOL_CAST (pool);
 }
 
@@ -549,10 +547,32 @@ gst_hisivideosink_show_frame (GstBaseSink * bsink, GstBuffer * buf)
   	GstHisiMMZBufInfo *frame = (GstHisiMMZBufInfo*)meta->mmz;
 	gint width = videosink->video_width;
 	gint height = videosink->video_height;
-	unsigned long addr = frame->phyaddr;//frame_get_phyaddress(frame->bufferaddr, videosink);
+	unsigned long addr = frame->phyaddr;
+
+	printf("show frame xxxx\n");
 	
 	if (addr > 0){
   		(*((HisiVideoOutputContext*)(videosink->vo_context))->render)(width,height,addr);
+	}
+  }else {
+	GstHisiFrameBufInfo *frame;
+	frame = 
+		(GstHisiFrameBufInfo*)gst_mini_object_steal_qdata(GST_MINI_OBJECT_CAST (buf), g_quark_from_string("omx.buf"));
+	printf("show frame1[%p][%p]\n",buf,frame);
+
+	if (frame){
+		gint width = videosink->video_width;
+		gint height = videosink->video_height;
+		unsigned long addr;
+
+		printf("show frame2\n");
+		
+		HI_MPI_MMZ_GetPhyAddr(frame->bufferaddr, &addr, frame->buffer_len);
+		
+		if (addr > 0){
+			printf("show frame3\n");
+  			(*((HisiVideoOutputContext*)(videosink->vo_context))->render)(width,height,addr);
+		}	
 	}
   }
   
@@ -570,6 +590,8 @@ gst_hisivideosink_propose_allocation (GstBaseSink * bsink, GstQuery * query)
 
   hisivideosink = GST_HISIVIDEOSINK (bsink);
 
+  printf("####### gst_hisivideosink_propose_allocation\n");
+  
   gst_query_parse_allocation (query, &caps, &need_pool);
 
   if ((pool = hisivideosink->pool))
