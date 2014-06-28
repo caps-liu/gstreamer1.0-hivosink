@@ -156,7 +156,7 @@ static gint32 alloc_contigous_buffer(guint32 buf_size,
 	buf_size += 0x40;
 	//align = 0;
 	buffer.bufsize = buf_size;
-	strncpy(buffer.bufname, "OMX_VDEC_OUT", sizeof(buffer.bufname));
+	strncpy(buffer.bufname, "VDEC_OUT_SINK", sizeof(buffer.bufname));
 	ret = HI_MMZ_Malloc(&buffer);
 	if(ret < 0)
 	{
@@ -541,41 +541,34 @@ gst_hisivideosink_show_frame (GstBaseSink * bsink, GstBuffer * buf)
   GstHisiVideoSink *videosink = GST_HISIVIDEOSINK(bsink);
   GstFlowReturn ret = GST_FLOW_OK;
   GstMetaHisiMemoryInfo *meta;
+  GstHisiFrameBufInfo *frame;
+  frame =
+        (GstHisiFrameBufInfo*)gst_mini_object_steal_qdata(GST_MINI_OBJECT_CAST (buf), g_quark_from_string("omx.buf"));
 
-  meta = GST_META_HISI_MEMORY_GET (buf);
-  if (meta) {
-  	GstHisiMMZBufInfo *frame = (GstHisiMMZBufInfo*)meta->mmz;
-	gint width = videosink->video_width;
-	gint height = videosink->video_height;
-	unsigned long addr = frame->phyaddr;
+  if (frame){
+    gint width = videosink->video_width;
+    gint height = videosink->video_height;
+    unsigned long addr;
 
-	printf("show frame xxxx\n");
-	
-	if (addr > 0){
-  		(*((HisiVideoOutputContext*)(videosink->vo_context))->render)(width,height,addr);
-	}
-  }else {
-	GstHisiFrameBufInfo *frame;
-	frame = 
-		(GstHisiFrameBufInfo*)gst_mini_object_steal_qdata(GST_MINI_OBJECT_CAST (buf), g_quark_from_string("omx.buf"));
-	printf("show frame1[%p][%p]\n",buf,frame);
+    HI_MPI_MMZ_GetPhyAddr(frame->bufferaddr, &addr, &(frame->buffer_len));
 
-	if (frame){
-		gint width = videosink->video_width;
-		gint height = videosink->video_height;
-		unsigned long addr;
+    if (addr > 0){
+        (*((HisiVideoOutputContext*)(videosink->vo_context))->render)(width,height,addr);
+    }
+  } else {
+    meta = GST_META_HISI_MEMORY_GET (buf);
+    if (meta) {
+        GstHisiMMZBufInfo *frame = (GstHisiMMZBufInfo*)meta->mmz;
+        gint width = videosink->video_width;
+        gint height = videosink->video_height;
+        unsigned long addr = frame->phyaddr;
 
-		printf("show frame2\n");
-		
-		HI_MPI_MMZ_GetPhyAddr(frame->bufferaddr, &addr, frame->buffer_len);
-		
-		if (addr > 0){
-			printf("show frame3\n");
-  			(*((HisiVideoOutputContext*)(videosink->vo_context))->render)(width,height,addr);
-		}	
-	}
+        if (addr > 0){
+            (*((HisiVideoOutputContext*)(videosink->vo_context))->render)(width,height,addr);
+        }
+    }
   }
-  
+
   return ret;
 }
     
