@@ -74,14 +74,18 @@ struct _GstHisiVideoSink {
   /* for buffer pool */
   GstBufferPool *pool;
   gboolean setup;
-  gpointer *vo_context;
+  gpointer vo_context;
 
   /* Framerate numerator and denominator */
   gint fps_n;
   gint fps_d;
   
   gint video_width, video_height; /* size of incoming video */
-  gint out_width, out_height;  
+  gint out_width, out_height;
+  gint x, y, width, height;
+  gboolean freeze, stop_keep_frame;
+  guint64 current_timestamp;
+  glong frame_count;  
 };
 
 struct _GstHisiVideoSinkClass {

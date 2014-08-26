@@ -2,9 +2,7 @@
 * Hisi Video Sink
 */
 
-#ifdef HAVE_CONFIG_H
 #include "config.h"
-#endif
 
 #include <gst/video/video.h>
 #include <hi_unf_common.h>
@@ -15,7 +13,7 @@
 
 #include <string.h>
 #include <stdlib.h>
-#include <gst_hisi_vo_context.h>
+#include "gst_hisi_vo_context.h"
 
 /* Debugging category */
 GST_DEBUG_CATEGORY_STATIC (hisivideosink_debug);
@@ -40,7 +38,9 @@ GST_STATIC_PAD_TEMPLATE ("sink",
 #define DEFAULT_FRAME_HEIGHT   1080 
 #define FRAME_SIZE(w, h)       (((w) * (h) * 3) / 2)
 #define ALIGN_UP(val, align)   (((val) + ((align)-1)) & ~((align)-1))
-
+#define DEFAULT_WINDOW_FREEZE       0
+#define DEFAULT_STOP_KEEP_FRAME     0
+#define DEFAULT_CURRENT_TIMESTAMP   0
 
 GType
 gst_meta_hisi_memory_api_get_type (void)
@@ -103,15 +103,12 @@ static void free_contigous_buffer(GstHisiMMZBufInfo *puser_buf)
     
 	if (NULL == puser_buf)
 	{
-		DEBUG_PRINT_ERROR("%s() invalid param\n", __func__);
 		return;
 	}
-
-	//printf("free_contigous_buffer: %p:%ld\n",puser_buf->bufferaddr,puser_buf->phyaddr);
-
+	
     buffer.phyaddr = puser_buf->phyaddr;
     buffer.user_viraddr = puser_buf->bufferaddr;
-	HI_MMZ_Free(&buffer);
+    HI_MMZ_Free(&buffer);
 }
 
 static void
@@ -148,19 +145,16 @@ static gint32 alloc_contigous_buffer(guint32 buf_size,
 
 	if (0 == puser_buf)
 	{
-		printf("%s() invalid param\n", __func__);
 		return -1;
 	}
 
 	buf_size = (buf_size + align - 1) & ~(align - 1);
 	buf_size += 0x40;
-	//align = 0;
 	buffer.bufsize = buf_size;
 	strncpy(buffer.bufname, "VDEC_OUT_SINK", sizeof(buffer.bufname));
 	ret = HI_MMZ_Malloc(&buffer);
 	if(ret < 0)
 	{
-		printf("%s() mmz alloc error!\n", __func__);
 		return -1;
 	}
 
@@ -249,7 +243,6 @@ gst_hisi_buffer_pool_new (GstHisiVideoSink * videosink)
   pool->videosink = gst_object_ref (videosink);
 
   GST_LOG_OBJECT (pool, "new hisi buffer pool %p", pool);
-  printf("##### new hisi buffer pool %p\n", pool);
   
   return GST_BUFFER_POOL_CAST (pool);
 }
@@ -271,6 +264,21 @@ gst_hisi_buffer_pool_init (GstHisiBufferPool * pool)
 {
   /* No processing */
 }
+
+/* prototypes */
+enum
+{
+    PROP_0,
+    PROP_WINDOW_RECT,
+    PROP_WINDOW_FREEZE,
+    PROP_STOP_KEEP_FRAME,
+    PROP_CURRENT_TIMESTAMP,
+};
+
+static void gst_hivosink_set_property (GObject * object,
+    guint property_id, const GValue * value, GParamSpec * pspec);
+static void gst_hivosink_get_property (GObject * object,
+    guint property_id, GValue * value, GParamSpec * pspec);
 
 static void
 gst_hisi_buffer_pool_class_init (GstHisiBufferPoolClass * klass)
@@ -300,10 +308,6 @@ gst_hisivideosink_setup (GstHisiVideoSink * videosink)
   videosink->fps_n = 0;
   videosink->setup = TRUE;
 
-  videosink->vo_context = hisi_vo_context_get();
-  (*((HisiVideoOutputContext*)(videosink->vo_context))->open)();
-
-  printf("%s:%d:%s\n",__func__,__LINE__,__FILE__);
   return videosink->setup;
 }
 
@@ -314,14 +318,15 @@ gst_hisivideosink_cleanup (GstHisiVideoSink * videosink)
 
   GST_DEBUG_OBJECT (videosink, "cleaning up DirectFB environment");
   
-  if (videosink->pool) {
+  if (videosink->pool) 
+  {
     gst_object_unref (videosink->pool);
     videosink->pool = NULL;
   }
-  (*((HisiVideoOutputContext*)(videosink->vo_context))->close)();
 
-  printf("%s:%d:%s\n",__func__,__LINE__,__FILE__);
+  (*((HisiVideoOutputContext*)(videosink->vo_context))->close)();
   videosink->setup = FALSE;
+  
 }
 
 static GstCaps *
@@ -379,7 +384,7 @@ beach:
 
   GST_DEBUG_OBJECT (videosink, "returning our caps %" GST_PTR_FORMAT,
       returned_caps);
- //printf("%s:%d:%s\n",__func__,__LINE__,__FILE__);
+ 
   return returned_caps;
 }
 
@@ -568,6 +573,8 @@ gst_hisivideosink_show_frame (GstBaseSink * bsink, GstBuffer * buf)
         }
     }
   }
+  
+  videosink->current_timestamp = GST_BUFFER_TIMESTAMP(buf);
 
   return ret;
 }
@@ -582,8 +589,6 @@ gst_hisivideosink_propose_allocation (GstBaseSink * bsink, GstQuery * query)
   guint size;
 
   hisivideosink = GST_HISIVIDEOSINK (bsink);
-
-  printf("####### gst_hisivideosink_propose_allocation\n");
   
   gst_query_parse_allocation (query, &caps, &need_pool);
 
@@ -650,6 +655,9 @@ gst_hisivideosink_init (GstHisiVideoSink * hisivideosink)
   hisivideosink->fps_d = 0;
   hisivideosink->fps_n = 0;
   hisivideosink->setup = FALSE;
+  
+  hisivideosink->vo_context = hisi_vo_context_get();
+  (*((HisiVideoOutputContext*)(hisivideosink->vo_context))->open)();
 }
 
 static void
@@ -666,21 +674,135 @@ gst_hisivideosink_class_init (GstHisiVideoSinkClass * klass)
   parent_class = g_type_class_peek_parent (klass);
   
   gobject_class->finalize = gst_hisivideosink_finalize;
+  gobject_class->set_property = gst_hivosink_set_property;
+  gobject_class->get_property = gst_hivosink_get_property;
   gst_element_class_set_static_metadata (gstelement_class,
       "Hisi video sink", "Sink/Video", "A Hisi based videosink",
       "xxxxx");
-
   gst_element_class_add_pad_template (gstelement_class,
       gst_static_pad_template_get (&gst_hisivideosink_sink_template_factory));
-
   gstelement_class->change_state = gst_hisivideosink_change_state;
-
   gstbasesink_class->get_caps = gst_hisivideosink_getcaps;
   gstbasesink_class->set_caps = gst_hisivideosink_setcaps;
   gstbasesink_class->get_times = gst_hisivideosink_get_times;
   gstbasesink_class->preroll = gst_hisivideosink_show_frame;
   gstbasesink_class->render = gst_hisivideosink_show_frame;
   gstbasesink_class->propose_allocation = gst_hisivideosink_propose_allocation;
+  
+  g_object_class_install_property (gobject_class, PROP_WINDOW_RECT,
+  g_param_spec_string ("window-rect", "Window Rect",
+    "The overylay window rect (x,y,width,height)",
+    NULL,
+    G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+
+  g_object_class_install_property (gobject_class, PROP_WINDOW_FREEZE,
+  g_param_spec_boolean ("freeze", "Window Freeze",
+    "freeze/unfreeze video",
+    DEFAULT_WINDOW_FREEZE,
+    G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+
+  g_object_class_install_property (gobject_class, PROP_STOP_KEEP_FRAME,
+  g_param_spec_boolean ("stop-keep-frame", "stop-keep-frame",
+    "Keep displaying the last frame when stop",
+    DEFAULT_STOP_KEEP_FRAME,
+    G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+
+  g_object_class_install_property (gobject_class, PROP_CURRENT_TIMESTAMP,
+  g_param_spec_uint64("current-timestamp", "current-timestamp",
+    "Video decoder handle in use",
+    0, G_MAXUINT64, DEFAULT_CURRENT_TIMESTAMP,
+    G_PARAM_READABLE));
+
+}
+
+
+void gst_hivosink_set_property (GObject * object, guint property_id,
+    const GValue * value, GParamSpec * pspec)
+{
+    GstHisiVideoSink *hivosink;
+    HI_HANDLE win_handle;
+    HisiVideoOutputContext *vo_ctx;
+    
+    g_return_if_fail (GST_IS_HISIVIDEOSINK (object));
+    hivosink = GST_HISIVIDEOSINK (object);
+    vo_ctx = hivosink->vo_context;
+    win_handle = vo_ctx->get_window_handle();   
+    
+    switch (property_id)
+    {
+        case PROP_WINDOW_RECT:
+            {
+                gint ret;
+                gint tempx,tempy,tempw,temph;
+                HI_UNF_WINDOW_ATTR_S WinAttr;
+
+                ret = sscanf(g_value_get_string (value), "%d,%d,%d,%d",
+                    &tempx, &tempy, &tempw, &temph);
+                if( ret == 4 )
+                {
+                    hivosink->x = tempx;
+                    hivosink->y = tempy;
+                    hivosink->width = tempw;
+                    hivosink->height = temph;
+                    hivosink->video_height = temph;
+                    hivosink->video_width = tempw;
+                    
+                    if(win_handle)
+                    {
+                        HI_UNF_VO_GetWindowAttr(win_handle, &WinAttr);
+                        WinAttr.stOutputRect.s32X = hivosink->x;
+                        WinAttr.stOutputRect.s32Y = hivosink->y;
+                        WinAttr.stOutputRect.s32Width = hivosink->width;
+                        WinAttr.stOutputRect.s32Height = hivosink->height;
+                        HI_UNF_VO_SetWindowAttr(win_handle, &WinAttr);
+                    }
+                }
+            }
+            break;
+        case PROP_WINDOW_FREEZE:
+            hivosink->freeze = g_value_get_boolean(value);
+            HI_UNF_VO_FreezeWindow(win_handle, hivosink->freeze, HI_UNF_WINDOW_FREEZE_MODE_LAST);
+            break;
+        case PROP_STOP_KEEP_FRAME:
+            hivosink->stop_keep_frame = g_value_get_boolean(value);
+            break;
+        default:
+            G_OBJECT_WARN_INVALID_PROPERTY_ID (object, property_id, pspec);
+            break;
+    }
+}
+
+void gst_hivosink_get_property (GObject * object, guint property_id,
+    GValue * value, GParamSpec * pspec)
+{
+    GstHisiVideoSink *hivosink;
+
+    g_return_if_fail (GST_IS_HISIVIDEOSINK (object));
+    hivosink = GST_HISIVIDEOSINK (object);
+    
+    switch (property_id)
+    {
+        case PROP_WINDOW_RECT:
+            {
+                char rect_str[64];
+                sprintf(rect_str, "%d,%d,%d,%d",
+                    hivosink->x, hivosink->y, hivosink->video_width, hivosink->video_height);
+                g_value_set_string (value, rect_str);
+            }
+            break;
+        case PROP_WINDOW_FREEZE:
+            g_value_set_boolean(value, hivosink->freeze);
+            break;
+        case PROP_STOP_KEEP_FRAME:
+            g_value_set_boolean(value, hivosink->stop_keep_frame);
+            break;
+        case PROP_CURRENT_TIMESTAMP:
+            g_value_set_uint64(value, hivosink->current_timestamp);
+            break;
+        default:
+            G_OBJECT_WARN_INVALID_PROPERTY_ID (object, property_id, pspec);
+            break;
+    }
 }
 
 static gboolean
