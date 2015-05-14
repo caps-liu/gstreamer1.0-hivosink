@@ -259,8 +259,8 @@ static int hi_vo_init ()
   WinAttr.stInputRect.s32Height = 0;
   WinAttr.stOutputRect.s32X = 0;
   WinAttr.stOutputRect.s32Y = 0;
-  WinAttr.stOutputRect.s32Width = 1920;
-  WinAttr.stOutputRect.s32Height = 1080;
+  WinAttr.stOutputRect.s32Width = 1080;
+  WinAttr.stOutputRect.s32Height = 720;
 
   ret = HI_UNF_VO_CreateWindow (&WinAttr, &hWin);
   if (HI_SUCCESS != ret) {
